@@ -64,10 +64,12 @@ def get_page(after):
             with urllib.request.urlopen(req, timeout=60) as r:
                 return json.loads(r.read())["data"] or []
         except urllib.error.HTTPError as e:
-            if e.code not in (429, 500, 502, 503, 504):
+            # 422 comes back now and then when a query times out on the archive's side.
+            if e.code not in (422, 429, 500, 502, 503, 504):
                 raise
+            reason = e.read()[:120].decode("utf-8", "replace")
             wait = int(e.headers.get("X-RateLimit-Reset") or 0) + 30 * (attempt + 1)
-            log(f"archive busy ({e.code}), waiting {wait} s")
+            log(f"archive busy ({e.code} {reason}), waiting {wait} s")
             time.sleep(wait)
     raise RuntimeError("archive kept refusing; trying again next run")
 
