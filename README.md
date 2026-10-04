@@ -28,7 +28,7 @@ Arctic Shift, a public archive of Reddit data, so no login is needed. The Window
 "Crack Watch archive backfill" runs it every 30 minutes, and each run works for 20
 minutes:
 
-1. **posts**: 100 posts per request, one request every ~8 s, oldest first, into
+1. **posts**: 100 posts per request, one request every ~15 s, oldest first, into
    `data/raw/archive.json`, until it reaches the posts the RSS fetcher already has
 2. **steam**: Steam details for the old games, a slice per run
 3. **done**: the task disables itself

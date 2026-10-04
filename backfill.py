@@ -5,7 +5,7 @@ run works for at most RUN_MINUTES and keeps its place in data/backfill_state.jso
 so a shutdown or reboot loses nothing.
 
   phase "posts"  the Arctic Shift archive (public Reddit data for researchers,
-                 no login), 100 posts per request, one request every ~8 s,
+                 no login), 100 posts per request, one request every ~15 s,
                  oldest first, into data/raw/archive.json
   phase "steam"  the builder fills in Steam details for the old games, a slice
                  per run, until nothing is left to look up
@@ -37,7 +37,7 @@ RUN_MINUTES = float(os.environ.get("BACKFILL_MINUTES", 20))
 START = int(datetime(2016, 9, 1, tzinfo=timezone.utc).timestamp())
 API = ("https://arctic-shift.photon-reddit.com/api/posts/search?subreddit=CrackWatch&limit=100&sort=asc"
        "&fields=id,title,link_flair_text,created_utc,selftext,author&after={after}")
-USER_AGENT = "crackwatch-plainly/1.0 (one-time archive backfill, one request every 8 s)"
+USER_AGENT = "crackwatch-plainly/1.0 (one-time archive backfill, one request every 15 s)"
 
 # Old post labels, mapped to the ones the builder knows.
 OLD_FLAIRS = {"NFO": "Release", "Repack": "Repack", "New Game Repack": "Repack", "Old Game Repack": "Repack"}
@@ -68,7 +68,7 @@ def get_page(after):
             if e.code not in (422, 429, 500, 502, 503, 504):
                 raise
             reason = e.read()[:120].decode("utf-8", "replace")
-            wait = int(e.headers.get("X-RateLimit-Reset") or 0) + 30 * (attempt + 1)
+            wait = int(e.headers.get("X-RateLimit-Reset") or 0) + 60 * (attempt + 1)
             log(f"archive busy ({e.code} {reason}), waiting {wait} s")
             time.sleep(wait)
     raise RuntimeError("archive kept refusing; trying again next run")
@@ -107,7 +107,7 @@ def phase_posts(state, deadline):
         if pages % 5 == 0:  # keep progress even if the run is cut short
             save(ARCHIVE, posts)
             save(STATE, state)
-        time.sleep(random.uniform(7, 10))
+        time.sleep(random.uniform(12, 18))  # the archive asks to slow down below ~8 s
     save(ARCHIVE, posts)
     reached = datetime.fromtimestamp(state.get("after", stop_at), timezone.utc)
     log(f"posts: {pages} pages this run, {len(posts)} archived posts, reached {reached:%Y-%m-%d}")
