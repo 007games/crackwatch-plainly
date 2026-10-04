@@ -68,3 +68,7 @@ Both scripts use only the Python standard library.
 The RSS feed has no post flair, so `flair_of()` in `fetch.py` works out the kind of post
 from its title and text. Groups and how they are described live in `GROUPS` in
 `builder/build.py`; an unknown group is shown as "a release group".
+
+## Credits
+
+Built with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding assistant.
