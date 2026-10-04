@@ -4,26 +4,43 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crack Watch, Plainly</title>
-<meta name="description" content="Which games got cracked, explained without the jargon.">
+<meta name="description" content="Which PC games got cracked, explained without the jargon.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header class="top">
-  <div class="wrap">
+<header class="bar">
+  <div class="wrap bar-row">
     <h1><a href="./" id="home" class="home">Crack Watch, <span>plainly</span></a></h1>
-    <p class="lead">Which PC games got cracked recently, explained without the jargon. Based on posts in r/CrackWatch.</p>
-    <div class="controls">
-      <input id="q" type="search" placeholder="Search a game…" autocomplete="off" aria-label="Search a game">
-      <div class="chips" id="chips" role="tablist"></div>
-    </div>
+    <input id="q" type="search" placeholder="Search every game since 2016…" autocomplete="off" aria-label="Search a game">
   </div>
 </header>
 
 <main class="wrap">
-  <p class="meta-line" id="meta"></p>
-  <section class="grid" id="grid" aria-live="polite"></section>
-  <p class="empty" id="empty" hidden>No games match that.</p>
+  <p class="lead">Which PC games got cracked, explained without the jargon. Based on posts in r/CrackWatch.</p>
+
+  <section class="stats" id="stats" aria-label="At a glance"></section>
+
+  <nav class="tabs" id="chips" role="tablist" aria-label="Filter"></nav>
+
+  <div class="table-wrap">
+    <table class="games" id="table">
+      <thead>
+        <tr>
+          <th class="c-img" aria-label="Cover"></th>
+          <th class="c-name sortable" data-sort="name">Game</th>
+          <th class="c-status">Status</th>
+          <th class="c-group sortable" data-sort="group">Cracked by</th>
+          <th class="c-days sortable num" data-sort="days" title="Days from the game's launch to the first crack">Days to crack</th>
+          <th class="c-date sortable num" data-sort="updated">Last news</th>
+          <th class="c-price sortable num" data-sort="price">Price</th>
+          <th class="c-rating sortable num" data-sort="rating">Rating</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <p class="table-foot"><span id="meta"></span> <button id="more" class="more" hidden>Show more</button></p>
 
   <section class="glossary" id="glossary">
     <h2>What do these words mean?</h2>
@@ -36,6 +53,7 @@
       <dt>DRM-free / GOG</dt><dd>GOG is a store that sells games without copy protection. Once a game is on GOG, a copy without protection exists by design.</dd>
       <dt>Update</dt><dd>A newer game version, packaged to work with an existing crack.</dd>
       <dt>Protection removed</dt><dd>The publisher took Denuvo out of the official game themselves, often a few years after launch.</dd>
+      <dt>Days to crack</dt><dd>Days between the game's release on Steam and the first crack.</dd>
     </dl>
   </section>
 </main>
@@ -43,7 +61,7 @@
 <footer class="foot">
   <div class="wrap">
     <p><b>News only.</b> This site reports which games were cracked. It never hosts or links to downloads.</p>
-    <p>Based on public posts in r/CrackWatch, rewritten in plain English. Not affiliated with Reddit, r/CrackWatch or Valve. Game info and images from Steam.</p>
+    <p>Based on public posts in r/CrackWatch, rewritten in plain English. Not affiliated with Reddit, r/CrackWatch, SteamDB or Valve. Game info and images from Steam.</p>
     <p id="contact" hidden>Questions or removal requests: <a id="issues" href="#">open an issue on GitHub</a>.</p>
   </div>
 </footer>
