@@ -340,6 +340,15 @@ def sentence(ev, launched):
 GOG_TEXT = "<b>GOG</b>, a store that sells games with no copy protection"
 
 
+def days_to_crack(events, launched):
+    """Days from launch to the first real crack, for the table's "Days to crack" column."""
+    cracks = [e["date"] for e in events if e["kind"] in ("crack", "denuvo")]
+    if not cracks or not launched:
+        return None
+    days = (datetime.fromtimestamp(min(cracks), timezone.utc) - launched).days
+    return days if 0 <= days <= 3650 else None
+
+
 def load_posts():
     posts = {}
     for path in (ARCHIVE_RAW, RAW):  # recent posts win over their archived copy
@@ -394,6 +403,10 @@ def build(steam_minutes=5):
             "name": (info or {}).get("name") or g["name"],
             "status": best["kind"],
             "label": STATUS_LABEL[best["kind"]],
+            "group": best.get("group"),
+            "group_kind": group_kind(best.get("group")),
+            "days": days_to_crack(uniq, launched),
+            "launched": int(launched.timestamp()) if launched else None,
             "updated": max(e["date"] for e in uniq),
             "summary": sentence(best, launched),
             # Without looked-up details, Steam's usual header address; the page hides it if missing.

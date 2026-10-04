@@ -9,7 +9,8 @@ if not exist data mkdir data
 %PY% -u fetch.py >> "data\update.log" 2>&1 || goto :eof
 %PY% -u builder\build.py >> "data\update.log" 2>&1 || goto :eof
 git remote get-url origin >nul 2>&1 || goto :eof
-git add docs
+rem Only the data: page changes are published by hand after a review.
+git add docs/data
 git diff --cached --quiet && goto :eof
 git commit -q -m "Update games" >> "data\update.log" 2>&1
 git push -q origin main >> "data\update.log" 2>&1
