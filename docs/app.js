@@ -1,4 +1,4 @@
-// Renders data/games.json (made by the builder container) as game cards.
+// Renders data/games.json (recent) as game cards; data/archive.json (older) loads on demand.
 const FILTERS = [
   { id: "news", label: "Latest news", test: g => g.status !== "update" },
   { id: "cracked", label: "Cracked", test: g => ["crack", "denuvo"].includes(g.status) },
@@ -7,6 +7,7 @@ const FILTERS = [
   { id: "drm", label: "DRM-free / protection removed", test: g => ["gog", "drm_removed"].includes(g.status) },
   { id: "update", label: "Updates only", test: g => g.status === "update" },
   { id: "all", label: "Everything", test: () => true },
+  { id: "archive", label: "Archive (older)", test: () => true },
 ];
 const TERMS = {
   denuvo: "Denuvo is the strongest anti-piracy protection. Games with it often stay uncracked for months.",
@@ -14,7 +15,10 @@ const TERMS = {
   hypervisor: "A hypervisor workaround gets around Denuvo without removing it. You must disable Windows security features, which puts your PC at risk.",
 };
 
-let games = [];
+let games = [];       // recent games
+let archive = null;   // older games, once loaded
+let archiveCount = 0;
+let archiveLoading = null;
 let filter = "news";
 try { filter = localStorage.getItem("cw-filter") || filter; } catch (e) {}
 const $ = id => document.getElementById(id);
@@ -24,8 +28,13 @@ function ago(ts) {
   if (s < 3600) return "just now";
   if (s < 86400) return Math.floor(s / 3600) + " h ago";
   const d = Math.floor(s / 86400);
-  return d === 1 ? "yesterday" : d < 31 ? d + " days ago" : new Date(ts * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  if (d === 1) return "yesterday";
+  if (d < 31) return d + " days ago";
+  const date = new Date(ts * 1000);
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short",
+    year: date.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
 }
+const postUrl = p => p.startsWith("http") ? p : "https://www.reddit.com" + p;
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
 function card(g) {
@@ -40,7 +49,8 @@ function card(g) {
       <ul class="timeline">${g.timeline.map(t => `
         <li><div class="t-date">${new Date(t.date * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
           · <span class="badge s-${t.kind}">${esc(t.label)}</span></div>
-          <div>${t.text}${t.size ? ` Size: ${esc(t.size)}.` : ""}</div></li>`).join("")}
+          <div>${t.text || (t.group ? `By <b>${esc(t.group)}</b>.` : "")}${t.size ? ` Size: ${esc(t.size)}.` : ""}
+            <a href="${esc(postUrl(t.post))}" target="_blank" rel="noopener">Post</a></div></li>`).join("")}
       </ul></details>` : "";
   const latest = g.timeline[0];
   return `<article class="card">
@@ -52,20 +62,32 @@ function card(g) {
       ${facts ? `<div class="facts">${facts}</div>` : ""}
       <div class="links">
         ${g.steam_url ? `<a href="${esc(g.steam_url)}" target="_blank" rel="noopener">Steam page</a>` : ""}
-        <a href="${esc(latest.post)}" target="_blank" rel="noopener">Original post</a>
+        <a href="${esc(postUrl(latest.post))}" target="_blank" rel="noopener">Original post</a>
       </div>
       ${history}
     </div></article>`;
 }
 
+function loadArchive() {
+  archiveLoading ??= fetch("data/archive.json", { cache: "no-store" })
+    .then(r => r.json())
+    .then(d => { archive = d.games; render(); })
+    .catch(() => { archive = []; render(); });
+}
+
 function render() {
   const q = $("q").value.trim().toLowerCase();
   const f = FILTERS.find(x => x.id === filter) || FILTERS[0];
+  // Searching looks through every year; the archive chip shows only older games.
+  if ((q.length >= 2 || f.id === "archive") && !archive) loadArchive();
+  const pool = f.id === "archive" ? (archive || []) : q.length >= 2 ? games.concat(archive || []) : games;
   $("chips").innerHTML = FILTERS.map(x => `<button class="chip" role="tab" data-f="${x.id}" aria-selected="${x.id === f.id}">
-    ${x.label}<span class="n">${games.filter(x.test).length}</span></button>`).join("");
-  const shown = games.filter(g => f.test(g) && (!q || g.name.toLowerCase().includes(q)));
+    ${x.label}<span class="n">${(x.id === "archive" ? archiveCount : games.filter(x.test).length).toLocaleString("en")}</span></button>`).join("");
+  const shown = pool.filter(g => f.test(g) && (!q || g.name.toLowerCase().includes(q)));
   $("grid").innerHTML = shown.slice(0, 300).map(card).join("");
-  $("empty").hidden = shown.length > 0;
+  const waiting = !archive && (f.id === "archive" || q.length >= 2);
+  $("empty").textContent = waiting ? "Loading older games…" : "No games match that.";
+  $("empty").hidden = shown.length > 0 && !waiting;
 }
 
 $("chips").addEventListener("click", e => {
@@ -103,7 +125,9 @@ fetch("data/games.json", { cache: "no-store" })
   .then(r => r.json())
   .then(d => {
     games = d.games;
-    $("meta").textContent = `${games.length} games · updated ${ago(d.built)}`;
+    archiveCount = d.archive || 0;
+    $("meta").textContent = `${games.length.toLocaleString("en")} games with recent news` +
+      (archiveCount ? ` · ${archiveCount.toLocaleString("en")} older in the archive` : "") + ` · updated ${ago(d.built)}`;
     render();
   })
   .catch(() => {

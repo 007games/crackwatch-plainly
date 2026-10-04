@@ -1,13 +1,18 @@
 """Turn raw r/CrackWatch posts into plain-English game cards.
 
-Reads  data/raw/posts.json      (written by fetch.py)
-Writes docs/data/games.json   (the public site; PUBLIC_DIR overrides docs/)
-Cache  data/steam_cache.json    (Steam store details, so each game is asked once)
+Reads  data/raw/posts.json       (recent posts, written by fetch.py)
+       data/raw/archive.json     (older posts, written by backfill.py)
+Writes docs/data/games.json      (games with news in the last RECENT_DAYS, loaded first)
+       docs/data/archive.json    (all other games, compact, loaded on demand)
+Cache  data/steam_cache.json     (Steam store details, so each game is asked once)
 
 Only facts and Steam/Reddit links go out: no NFOs, no download or repack links.
 
-    python build.py          build once
-    python build.py --loop   rebuild every few minutes (the container's mode)
+    python build.py                     build, with at most 5 minutes of Steam lookups
+    python build.py --steam-minutes 18  more lookups (the backfill's mode)
+
+Lookups that do not fit in the time are left for a later build; the last line
+says how many are pending.
 """
 import html
 import json
@@ -15,6 +20,7 @@ import os
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -22,8 +28,11 @@ from pathlib import Path
 
 DATA = Path(os.environ.get("DATA_DIR", Path(__file__).resolve().parent.parent / "data"))
 RAW = DATA / "raw" / "posts.json"
-OUT = Path(os.environ.get("PUBLIC_DIR", Path(__file__).resolve().parent.parent / "docs")) / "data" / "games.json"
+ARCHIVE_RAW = DATA / "raw" / "archive.json"
+PUBLIC = Path(os.environ.get("PUBLIC_DIR", Path(__file__).resolve().parent.parent / "docs")) / "data"
 CACHE = DATA / "steam_cache.json"
+LOCK = DATA / "build.lock"
+RECENT_DAYS = 120
 
 # ------------------------------------------------------------------ glossary
 # Who released it, in words a non-scener understands.
@@ -32,7 +41,10 @@ GROUPS = {
     "skidrow": "scene", "codex": "scene", "plaza": "scene", "doge": "scene", "tinyiso": "scene",
     "elamigos": "repack", "fitgirl": "repack", "dodi": "repack", "kaos": "repack", "darcktsiders": "repack",
     "vhstape": "scene", "badkarma": "scene", "dinobytes": "scene", "delight": "scene", "shame": "scene",
-    "razor": "scene",
+    "razor": "scene", "cpy": "scene", "conspir4cy": "scene", "reloaded": "scene", "hoodlum": "scene",
+    "prophet": "scene", "darksiders": "scene", "hi2u": "scene", "simplex": "scene", "relaxed": "scene",
+    "steampunks": "cracker", "baldman": "cracker", "voksi": "cracker", "revolt": "cracker",
+    "3dm": "chinese", "3dmgame": "chinese", "aloha": "chinese", "lmao": "chinese",
     "empress": "cracker", "0xzeon": "cracker", "artifact": "cracker", "voices38": "cracker", "denuvowo": "cracker",
     "p2p": "p2p", "x.x.riddick.x.x": "p2p", "x.x.riddick.x": "p2p", "i_know": "p2p", "insaneramzes": "p2p",
     "fckdrm": "p2p", "0verflow": "p2p", "bigmac": "p2p", "puls3": "p2p", "rg": "p2p",
@@ -42,6 +54,7 @@ GROUP_KIND_TEXT = {
     "scene": "a long-running release group",
     "repack": "a <span class=term data-t=repack>repacker</span>",
     "cracker": "an independent cracker",
+    "chinese": "a Chinese cracking group",
     "p2p": "an independent uploader outside the organised scene",
     "gog": "the GOG store, which sells games with no copy protection at all",
     None: "a release group",
@@ -70,7 +83,7 @@ def split_release(title, group=None):
     The group is the part after the last dash, unless the daily table already
     says who it is (groups like 'x.X.RIDDICK.X.x' contain dots and dashes).
     """
-    t = title.strip()
+    t = re.sub(r"[\s._]+(torrent|cracked)$", "", title.strip(), flags=re.I)
     if group and t.lower().endswith("-" + group.lower()):
         t = t[:-len(group) - 1]
     elif not group:
@@ -78,6 +91,9 @@ def split_release(title, group=None):
         if m:
             t, group = m.group(1), m.group(2)
     t = re.sub(r"[._ -]+(REPACK|PROPER|MULTi\d*|READ\.?NFO|x\.X\.\w+\.X\.x|x X \w+ X x)\b.*$", "", t, flags=re.I)
+    # 2016-era titles: "3DMGAME-Name-3DM torrent", "Name Cracked", "Name Universal Crack Only SSE".
+    t = re.sub(r"^3DMGAME[-._ ]", "", t, flags=re.I)
+    t = re.sub(r"([._ -]+(cracked|crack|only|torrent|universal|sse|fix|working|confirmed))+$", "", t, flags=re.I)
     is_update = bool(re.search(r"(^|[._ ])update([._ ]|$)", t, re.I))
     version = None
     # The name ends where the version, build or update marker starts.
@@ -152,6 +168,13 @@ def events_from_post(p):
                             kind=kind, version=version, review=review))
         return out
 
+    if flair == "Repack":
+        name = re.split(r"\s+[(\[]|\s+[–-]\s+v?\d|,\s*v\d|\s+v\d+[.\d]*|\s+build\s+\d", title, maxsplit=1, flags=re.I)[0]
+        name = name.strip(" -–:")
+        author = (p.get("author") or "").lower()
+        group = next((g for k, g in REPACKERS.items() if k in author), None)
+        return [dict(base, game=name, group=group, steam=None, kind="repack")] if name else []
+
     if flair == "Denuvo Hypervisor Workaround":
         m = re.match(r"^(.*?)\s+(?:v?\d[\w.]*\s+)?-\s+(\w+)", title)
         name = m.group(1) if m else title.split(" - ")[0]
@@ -168,6 +191,9 @@ def events_from_post(p):
 
 
 # ------------------------------------------------------------------ Steam
+REPACKERS = {"fitgirl": "FitGirl", "dodi": "DODI", "kaos": "KaOs", "elamigos": "ElAmigos", "xatab": "xatab"}
+
+
 def http_json(url):
     req = urllib.request.Request(url, headers={"User-Agent": "crackwatch-plain/1.0"})
     with urllib.request.urlopen(req, timeout=20) as r:
@@ -175,17 +201,32 @@ def http_json(url):
 
 
 class Steam:
-    def __init__(self):
+    def __init__(self, minutes):
         self.cache = json.loads(CACHE.read_text(encoding="utf-8")) if CACHE.exists() else {}
         self.calls = 0
+        self.pending = 0  # lookups left for a later build
+        self.deadline = time.time() + minutes * 60
+
+    def out_of_time(self):
+        if time.time() > self.deadline:
+            self.pending += 1
+            return True
+        return False
 
     def save(self):
         CACHE.write_text(json.dumps(self.cache, ensure_ascii=False), encoding="utf-8")
 
     def _get(self, url):
         self.calls += 1
+        if self.calls % 50 == 0:
+            self.save()
         time.sleep(1.6)  # Steam allows about 200 requests per 5 minutes
-        return http_json(url)
+        try:
+            return http_json(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 429:  # told to slow down: stop asking for this build
+                self.deadline = 0
+            raise
 
     def _search_once(self, term, want):
         q = urllib.parse.quote(term)
@@ -198,6 +239,8 @@ class Steam:
         """Steam's search often finds nothing for 'X Deluxe Edition' but finds 'X'."""
         key = "search2:" + name.lower()
         if key not in self.cache:
+            if self.out_of_time():
+                return None
             want = norm(name)
             try:
                 hit = self._search_once(name, want)
@@ -214,6 +257,8 @@ class Steam:
     def details(self, appid):
         key = "app:" + appid
         if key not in self.cache:
+            if self.out_of_time():
+                return None
             try:
                 res = self._get(f"https://store.steampowered.com/api/appdetails?appids={appid}&cc=us&l=english")
                 d = (res.get(appid) or {}).get("data") or {}
@@ -268,20 +313,21 @@ def sentence(ev, launched):
         elif days > 365:
             after = f" (the game came out in {launched.year})"
     k = ev["kind"]
+    by = f" by {who(g)}" if g else ""
     if k == "denuvo":
         return (f"This game was protected by <span class=term data-t=denuvo>Denuvo</span>, the toughest anti-piracy "
-                f"protection around, and it has now been fully removed by {who(g)}{after}.")
+                f"protection around, and it was fully removed{by}{after}.")
     if k == "crack":
-        return f"A cracked version, playable without buying it, was released by {who(g)}{after}."
+        return f"A cracked version, playable without buying it, was released{by}{after}."
     if k == "gog":
-        return f"A DRM-free copy is now out, taken from {GOG_TEXT}{after}."
+        return f"A DRM-free copy came out, taken from {GOG_TEXT}{after}."
     if k == "repack":
         name = f"<b>{html.escape(g)}</b>" if g else "Someone"
         return (f"{name} put out a <span class=term data-t=repack>repack</span>: a smaller, easier-to-install "
                 f"version of an existing crack{after}.")
     if k == "update":
         v = f" to version <b>{html.escape(ev['version'])}</b>" if ev.get("version") else ""
-        return f"An update{v} is out for the cracked version, released by {who(g)}."
+        return f"An update{v} for the cracked version was released{by}."
     if k == "workaround":
         return (f"<b>Not a real crack.</b> {who(g) or 'Someone'} released a <span class=term data-t=hypervisor>hypervisor "
                 f"workaround</span>: it only runs if you switch off Windows security features, which puts your PC at risk.")
@@ -293,18 +339,35 @@ def sentence(ev, launched):
 GOG_TEXT = "<b>GOG</b>, a store that sells games with no copy protection"
 
 
-def build():
-    if not RAW.exists():
+def load_posts():
+    posts = {}
+    for path in (ARCHIVE_RAW, RAW):  # recent posts win over their archived copy
+        if path.exists():
+            posts.update(json.loads(path.read_text(encoding="utf-8")))
+    return posts
+
+
+def write_json(path, obj):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    tmp.replace(path)
+
+
+def build(steam_minutes=5):
+    posts = load_posts()
+    if not posts:
         print("no raw posts yet:", RAW)
         return
-    posts = json.loads(RAW.read_text(encoding="utf-8"))
     events = [e for p in posts.values() for e in events_from_post(p) if e.get("game")]
-    steam = Steam()
+    steam = Steam(steam_minutes)
 
     # A name posted without a Steam link often appears elsewhere with one.
     known = {norm(e["game"]): e["steam"] for e in events if e.get("steam")}
+    # Newest first, so the Steam time goes to the games people look at first.
+    events.sort(key=lambda e: -e["date"])
     games = {}
-    for ev in sorted(events, key=lambda e: e["date"]):
+    for ev in events:
         appid = ev.get("steam") or known.get(norm(ev["game"])) or steam.search(ev["game"])
         key = "steam:" + appid if appid else "name:" + norm(ev["game"])
         g = games.setdefault(key, {"id": key, "name": ev["game"], "steam": appid, "events": []})
@@ -333,7 +396,6 @@ def build():
             "updated": max(e["date"] for e in uniq),
             "summary": sentence(best, launched),
             "image": (info or {}).get("image"),
-            "blurb": (info or {}).get("blurb"),
             "genres": (info or {}).get("genres") or [],
             "released": (info or {}).get("released"),
             "price": (info or {}).get("price"),
@@ -341,33 +403,48 @@ def build():
             "steam_url": f"https://store.steampowered.com/app/{g['steam']}/" if g["steam"] else None,
             "timeline": [{
                 "date": e["date"], "kind": e["kind"], "label": STATUS_LABEL[e["kind"]],
-                "text": sentence(e, launched), "post": e["post"], "size": e.get("size"),
-                "group": e.get("group"),
+                "text": sentence(e, launched), "post": e["post"].removeprefix("https://www.reddit.com"),
+                "size": e.get("size"), "group": e.get("group"),
             } for e in uniq],
         })
-        if steam.calls and steam.calls % 25 == 0:
-            steam.save()
     steam.save()
     out.sort(key=lambda g: -g["updated"])
-    OUT.parent.mkdir(parents=True, exist_ok=True)
-    tmp = OUT.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"built": int(time.time()), "games": out}, ensure_ascii=False), encoding="utf-8")
-    tmp.replace(OUT)
-    print(f"{datetime.now():%Y-%m-%d %H:%M} built {len(out)} games from {len(posts)} posts "
-          f"({steam.calls} Steam calls)", flush=True)
+
+    cutoff = time.time() - RECENT_DAYS * 86400
+    recent = [g for g in out if g["updated"] >= cutoff]
+    older = [g for g in out if g["updated"] < cutoff]
+    for g in older:  # the archive is loaded whole: keep it small
+        for t in g["timeline"]:
+            t.pop("text", None)
+    built = int(time.time())
+    write_json(PUBLIC / "games.json", {"built": built, "games": recent, "archive": len(older)})
+    write_json(PUBLIC / "archive.json", {"built": built, "games": older})
+    print(f"{datetime.now():%Y-%m-%d %H:%M} built {len(recent)} recent + {len(older)} archived games "
+          f"from {len(posts)} posts ({steam.calls} Steam calls, pending {steam.pending} )", flush=True)
+
+
+class Lock:
+    """One build at a time: the 2-hourly update and the backfill share the Steam cache."""
+
+    def __enter__(self):
+        for _ in range(90):  # wait up to 15 minutes
+            try:
+                os.close(os.open(LOCK, os.O_CREAT | os.O_EXCL))
+                return self
+            except FileExistsError:
+                if time.time() - LOCK.stat().st_mtime > 45 * 60:  # left behind by a crash
+                    LOCK.unlink(missing_ok=True)
+                    continue
+                time.sleep(10)
+        raise SystemExit("another build is still running; skipped")
+
+    def __exit__(self, *exc):
+        LOCK.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
-    if "--loop" in sys.argv:
-        last = None
-        while True:
-            try:
-                mtime = RAW.stat().st_mtime if RAW.exists() else None
-                if mtime != last:
-                    build()
-                    last = mtime
-            except Exception as e:
-                print("build failed:", type(e).__name__, e, flush=True)
-            time.sleep(int(os.environ.get("CHECK_EVERY", "60")))
-    else:
-        build()
+    minutes = 5
+    if "--steam-minutes" in sys.argv:
+        minutes = float(sys.argv[sys.argv.index("--steam-minutes") + 1])
+    with Lock():
+        build(minutes)

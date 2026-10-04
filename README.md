@@ -15,7 +15,27 @@ update.cmd  (Windows Task Scheduler, every 2 hours)
   3. git push          docs/ -> GitHub Pages
 ```
 
-`data/` (raw posts, Steam cache, log) stays on the PC and is not in the repo.
+`data/` (raw posts, Steam cache, logs) stays on the PC and is not in the repo.
+
+The site has two data files: `games.json` (games with news in the last 120 days,
+loaded first) and `archive.json` (everything older, loaded when someone searches or
+opens the Archive tab).
+
+## The archive backfill (one-off)
+
+`backfill.py` adds every post since the subreddit started in 2016. It reads them from
+Arctic Shift, a public archive of Reddit data, so no login is needed. The Windows task
+"Crack Watch archive backfill" runs it every 30 minutes, and each run works for 20
+minutes:
+
+1. **posts**: 100 posts per request, one request every ~8 s, oldest first, into
+   `data/raw/archive.json`, until it reaches the posts the RSS fetcher already has
+2. **steam**: Steam details for the old games, a slice per run
+3. **done**: the task disables itself
+
+Progress is in `data/backfill_state.json` and `data/backfill.log`
+(`python backfill.py status`). Run it again from scratch by deleting both files
+and `data/raw/archive.json`, then enabling the task.
 
 ## Local preview
 
