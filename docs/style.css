@@ -40,6 +40,8 @@ a { color: var(--accent); }
 .top { background: var(--surface); border-bottom: 1px solid var(--line); padding: 28px 0 16px; }
 h1 { margin: 0; font-size: clamp(1.6rem, 4vw, 2.2rem); letter-spacing: -.02em; }
 h1 span { color: var(--muted); font-weight: 500; }
+.home { color: inherit; text-decoration: none; }
+.home:hover span { color: var(--accent); }
 .lead { margin: 4px 0 16px; color: var(--muted); max-width: 60ch; }
 .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 #q {

@@ -99,6 +99,16 @@ $("chips").addEventListener("click", e => {
 });
 $("q").addEventListener("input", render);
 
+// The title goes back to the start: latest news, no search, top of the page.
+$("home").addEventListener("click", e => {
+  e.preventDefault();
+  filter = "news";
+  try { localStorage.setItem("cw-filter", filter); } catch (err) {}
+  $("q").value = "";
+  render();
+  scrollTo({ top: 0, behavior: "smooth" });
+});
+
 // A cover that doesn't exist on Steam becomes the plain title tile.
 document.addEventListener("error", e => {
   const img = e.target;
