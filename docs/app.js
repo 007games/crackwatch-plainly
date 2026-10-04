@@ -36,6 +36,13 @@ const fmtDate = ts => new Date(ts * 1000).toLocaleDateString("en-GB", { day: "nu
 const price = g => !g.price ? null : /free/i.test(g.price) ? 0 : parseFloat(g.price.replace(/[^\d.]/g, "")) || null;
 const dash = `<span class="dim">–</span>`;
 
+// "007.First.Light-RUNE" and "007 First Light" both search as "007 first light".
+function searchText(s) {
+  s = s.trim();
+  if (/^\S+-[\w.]+$/.test(s) && /[._]/.test(s)) s = s.slice(0, s.lastIndexOf("-"));  // a release name
+  return s.toLowerCase().replace(/['’™®]/g, "").replace(/[._:\-–—]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
 function ago(ts) {
   const s = Date.now() / 1000 - ts;
   if (s < 3600) return "just now";
@@ -126,7 +133,7 @@ function loadArchive() {
 }
 
 function render() {
-  const q = $("q").value.trim().toLowerCase();
+  const q = searchText($("q").value);
   const f = FILTERS.find(x => x.id === filter) || FILTERS[0];
   // Searching looks through every year; the archive tab shows only older games.
   if ((q.length >= 2 || f.id === "archive") && !archive) loadArchive();
@@ -135,7 +142,7 @@ function render() {
   $("chips").innerHTML = FILTERS.map(x => `<button class="tab" role="tab" data-f="${x.id}" aria-selected="${x.id === f.id}">
     ${x.label}<span class="n">${(x.id === "archive" ? archiveCount : games.filter(x.test).length).toLocaleString("en")}</span></button>`).join("");
 
-  shown = pool.filter(g => f.test(g) && (!q || g.name.toLowerCase().includes(q)));
+  shown = pool.filter(g => f.test(g) && (!q || (g._s ??= searchText(g.name)).includes(q)));
   const { key, dir } = sort;
   shown.sort((a, b) => {
     const va = sortValue(a, key), vb = sortValue(b, key);

@@ -120,7 +120,72 @@ def parse_review(s):
     return {"percent": round(float(m.group(1))), "count": m.group(2)} if m else None
 
 
+MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+# Words around a name that say how it was released, not what the game is called.
+NAME_JUNK = re.compile(
+    r"(?:\s+|[._-])(?:crack\s?fix|hot\s?fix|crack\s+only|online\s+fix|steamworks\s+fix|cracked|crack|fix|x86|x64|rip|"
+    r"to\s+cracked|bypass(?:ed)?|prepack|inc(?:l|luding)?\.?(?:\s+[\w']+)*|all\s+dlc'?s?|dlcs?|v\d+(?:\.\d+)*|"
+    r"public\s+beta\s*\d*|working|dirfix|and)$", re.I)
+# A question or a sentence, not a release: early posts often carried a "Release" label anyway.
+SENTENCE = re.compile(
+    r"\?|^(will|is|does|do|did|can|could|how\s+(?:do|to\s+(?:fix|play|install|use))|why|what|when\s+will|anyone|has|have|"
+    r"need|test\b|official|remove|thanks?|thank\s+you|i\s|i'm|my\s|we\s|the\s+[‘'\"])|\b(please|pls|plz|help\s+me\s+with|"
+    r"cracked\s+it|odds|says\s+this|error|website|crashing|not\s+working|feed|thanks|appreciation|amateurs|question|for\s+free|free\s+(?:on|for|games?|crack|version)|leaked|tutorial|"
+    r"bitcoin|script|now\s+you\s+can|available|claim|if\s+you\s+want|can\s+be\s+applied|drm[\s-]free\s+on|"
+    r"will\s+be\s+on|psd\s+files)\b", re.I)
+SCENE_TITLE = re.compile(r"^[\w.()'&+!,]+-[\w.]+$")  # no / ? : so a pasted link never passes
+# Never on the site: anything naming where to get files, or a web address.
+OFF_LIMITS = re.compile(r"torrent|download|magnet|\bigg|\bwww\b|\.com\b|\bcom/|\bcom\s|\bco kr\b|youtube|imgur|\blink\b", re.I)
+
+
+def looks_like_release(title):
+    if SCENE_TITLE.match(title.strip()):
+        return True
+    words = len(re.sub(r"[\[({].*?[\])}]", "", title).split())  # "(v1.06, MULTi11)" doesn't count
+    return words <= 9 and not SENTENCE.search(title)
+KNOWN_BY = re.compile(r"\s+(?:(?:crack|crackfix|fix|bypass|prepack|repack|hypervisor)(?:\s+v\d+)?\s+)?by\s+[\w.-]+(?:\s+and\s+[\w.-]+)?$", re.I)
+NOT_A_GAME = re.compile(r"^(poll|generic|weekly|daily|\[crack watch\])\b", re.I)
+
+
+def clean_name(name):
+    """'Pro Evolution Soccer 2017 CRACKFIX', 'X (Hypervisor) (INTEL & AMD)', '[X](nfo-link)' -> the game's name."""
+    n = MD_LINK.sub(r"\1", name or "").replace("\\", "").replace("*", "")  # markdown: "RPG\!\!", "**CRACKFIX**"
+    n = re.sub(r"https?://\S+", "", n).strip()
+    if " " not in n and re.search(r"[._]", n):  # a release name in a table: "When.Ski.Lifts.Go.Wrong"
+        n = split_release(n)[0]
+    n = re.split(r"\s+[-–|]\s+(?:darck|kaos|fitgirl|dodi|corepack|elamigos|multi\d*|lossless)\b|\s+\|\s+|\s+\+\s+|\s+—\s+",
+                 n, maxsplit=1, flags=re.I)[0]
+    n = re.sub(r"\s*[(\[{][^)\]}]*[)\]}]?", " ", n)  # (Hypervisor), [FitGirl Repack], {MULTI15}
+    n = re.sub(r"\s+", " ", n).strip(" -–:,.|")
+    for _ in range(4):  # "Name Online Fix x86", "Name Crack Only V2"
+        before = n
+        n = KNOWN_BY.sub("", n) if re.search(r"\b(crack|fix|bypass|prepack|repack|hypervisor)(\s+v\d+)?\s+by\b", n, re.I) or \
+            re.search(r"\sby\s+(" + "|".join(map(re.escape, KNOWN_BYLINE)) + r")\b", n, re.I) else n
+        n = NAME_JUNK.sub("", n).strip(" -–:,.")
+        last = n.rsplit(" ", 1)
+        if len(last) == 2 and last[1].lower() in GROUPS:  # "Octopath Traveler CPY"
+            n = last[0]
+        if n == before:
+            break
+    return n
+
+
+KNOWN_BYLINE = ["denuvowo", "kirigiri", "zaxrow", "uberpsyx", "corepack", "masquerade", "empress", "voices38", "0xzeon"]
+
+
 def events_from_post(p):
+    """The events of a post, with clean game names; junk titles give nothing."""
+    out = []
+    for e in _events_from_post(p):
+        e["game"] = clean_name(e["game"])
+        if e["game"] and len(e["game"]) > 1 and not NOT_A_GAME.match(e["game"]) \
+                and not OFF_LIMITS.search(e["game"]) \
+                and not OFF_LIMITS.search(re.sub(r"selective\s+download", "", p.get("title") or "", flags=re.I)):
+            out.append(e)
+    return out
+
+
+def _events_from_post(p):
     """One raw post -> zero or more events (a game, what happened, who did it)."""
     flair = (p.get("link_flair_text") or "").strip()
     title, body = p.get("title") or "", html.unescape(p.get("selftext") or "")
@@ -128,6 +193,10 @@ def events_from_post(p):
     post_url = "https://www.reddit.com" + (p.get("permalink") or "")
     base = {"date": when, "post": post_url}
     if p.get("removed_by_category"):
+        return []
+    if re.match(r"^Daily Releases?\b", title, re.I):  # 2017 tables carried the "Release" label
+        flair = "Daily release"
+    if flair not in ("Daily release", "Repack") and not looks_like_release(title):
         return []
 
     if flair in ("Release", "Denuvo release"):
@@ -144,7 +213,10 @@ def events_from_post(p):
         out = []
         section = None
         for line in body.splitlines():
-            cells = [c.replace("**", "").strip() for c in line.strip().strip("|").split("|")]
+            # Older tables link each name to its NFO page: keep only the text, never the address.
+            # Done on the whole line first: a name can hold a "|" inside its link text.
+            plain = MD_LINK.sub(lambda m: m.group(1).replace("|", "/"), line)
+            cells = [c.replace("**", "").strip() for c in plain.strip().strip("|").split("|")]
             if len(cells) < 2 or set(cells[0]) <= set(":- "):
                 continue
             if cells[1].lower() == "group" or cells[0].lower() in ("game", "update"):
@@ -152,7 +224,7 @@ def events_from_post(p):
                 continue
             if section is None:
                 continue
-            group = cells[1] or None
+            group = cells[1] if cells[1] and len(cells[1]) <= 30 and not re.search(r"https?:|\]\(", cells[1]) else None
             steam = STEAM_APP.search(cells[2] if len(cells) > 2 else "") or re.search(r"/app/(\d+)", line)
             review = parse_review(cells[3] if len(cells) > 3 else "")
             if section == "update":
@@ -169,11 +241,17 @@ def events_from_post(p):
         return out
 
     if flair == "Repack":
-        name = re.split(r"\s+[(\[]|\s+[–-]\s+v?\d|,\s*v\d|\s+v\d+[.\d]*|\s+build\s+\d", title, maxsplit=1, flags=re.I)[0]
-        name = name.strip(" -–:")
+        # One post can list several: "Game A (v1.0, MULTi9) 3.8 GB / Game B (MULTi2) 10 GB [FitGirl Repack]".
         author = (p.get("author") or "").lower()
-        group = next((g for k, g in REPACKERS.items() if k in author), None)
-        return [dict(base, game=name, group=group, steam=None, kind="repack")] if name else []
+        group = next((g for k, g in REPACKERS.items() if k in author or k in title.lower()), None)
+        out = []
+        for part in re.split(r"\s+/\s+", re.sub(r"\s*[(\[{][^)\]}]*[)\]}]", " ", title)):
+            part = re.sub(r"\s+(?:from\s+)?[\d.,]+\s*[GM]B\b.*$", "", part, flags=re.I)  # "3.8 GB", "from 6.7 GB"
+            name = re.split(r"\s+[–-]\s+v?\d|,\s*v\d|\s+v\d+[.\d]*|\s+build\s+\d", part, maxsplit=1, flags=re.I)[0]
+            name = name.strip(" -–:")
+            if name and looks_like_release(name):
+                out.append(dict(base, game=name, group=group, steam=None, kind="repack"))
+        return out
 
     if flair == "Denuvo Hypervisor Workaround":
         m = re.match(r"^(.*?)\s+(?:v?\d[\w.]*\s+)?-\s+(\w+)", title)
@@ -349,6 +427,10 @@ def days_to_crack(events, launched):
     return days if 0 <= days <= 3650 else None
 
 
+FORBIDDEN = re.compile(r"predb\.|xrel\.to|pastebin|magnet:|torrent|nfo\.html|ibb\.co|imgur|mega\.nz|1fichier|"
+                       r"igg-?games|fitgirl-repacks|dodi-repacks|steamrip|gofile|rapidgator", re.I)
+
+
 def load_posts():
     posts = {}
     for path in (ARCHIVE_RAW, RAW):  # recent posts win over their archived copy
@@ -387,14 +469,15 @@ def build(steam_minutes=5):
     for g in games.values():
         info = steam.details(g["steam"]) if g["steam"] else None
         launched = parse_date(info.get("released")) if info else None
-        evs = sorted(g["events"], key=lambda e: -e["date"])
-        # Same release in a single post and again in a daily table: keep one.
+        # Same release in its own post and again in a later daily table: keep the first,
+        # so the history shows when it really happened.
         seen, uniq = set(), []
-        for e in evs:
+        for e in sorted(g["events"], key=lambda e: e["date"]):
             k = (e["kind"], (e.get("group") or "").lower(), e.get("version"))
             if k not in seen:
                 seen.add(k)
                 uniq.append(e)
+        uniq.reverse()  # newest first for the page
         # The strongest news wins; within it, credit whoever did it first.
         best = max(uniq, key=lambda e: (STATUS_RANK[e["kind"]], -e["date"]))
         review = next((e["review"] for e in uniq if e.get("review")), None)
@@ -423,6 +506,11 @@ def build(steam_minutes=5):
             } for e in uniq],
         })
     steam.save()
+    # Safety net: nothing that points at files or NFO pages is ever published.
+    clean = [g for g in out if not FORBIDDEN.search(json.dumps(g, ensure_ascii=False))]
+    if len(clean) < len(out):
+        print(f"left out {len(out) - len(clean)} games with a file or NFO address in their data", flush=True)
+    out = clean
     out.sort(key=lambda g: -g["updated"])
 
     cutoff = time.time() - RECENT_DAYS * 86400
