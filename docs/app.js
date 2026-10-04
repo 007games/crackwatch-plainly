@@ -99,6 +99,16 @@ $("chips").addEventListener("click", e => {
 });
 $("q").addEventListener("input", render);
 
+// A cover that doesn't exist on Steam becomes the plain title tile.
+document.addEventListener("error", e => {
+  const img = e.target;
+  if (img.tagName !== "IMG" || !img.closest(".cover")) return;
+  const tile = document.createElement("div");
+  tile.className = "noimg";
+  tile.textContent = img.closest(".card").querySelector("h3").textContent;
+  img.replaceWith(tile);
+}, true);
+
 // Glossary pop-ups on dashed words.
 const tip = $("tip");
 document.addEventListener("mouseover", e => {

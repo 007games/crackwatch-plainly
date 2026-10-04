@@ -191,6 +191,7 @@ def events_from_post(p):
 
 
 # ------------------------------------------------------------------ Steam
+STEAM_HEADER = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{}/header.jpg"
 REPACKERS = {"fitgirl": "FitGirl", "dodi": "DODI", "kaos": "KaOs", "elamigos": "ElAmigos", "xatab": "xatab"}
 
 
@@ -395,7 +396,8 @@ def build(steam_minutes=5):
             "label": STATUS_LABEL[best["kind"]],
             "updated": max(e["date"] for e in uniq),
             "summary": sentence(best, launched),
-            "image": (info or {}).get("image"),
+            # Without looked-up details, Steam's usual header address; the page hides it if missing.
+            "image": (info or {}).get("image") or (g["steam"] and STEAM_HEADER.format(g["steam"])),
             "genres": (info or {}).get("genres") or [],
             "released": (info or {}).get("released"),
             "price": (info or {}).get("price"),
