@@ -1,0 +1,13 @@
+# Crack Watch, plainly - local preview of the public site.
+#   update.cmd (Windows task, every 2 h): fetch.py -> build.py -> docs/ -> git push -> GitHub Pages
+#   web: the same docs/ folder at http://localhost:8080
+name: crackwatch
+
+services:
+  web:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./docs:/usr/share/nginx/html:ro
+    restart: unless-stopped

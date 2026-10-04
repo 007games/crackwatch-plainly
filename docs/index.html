@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crack Watch, Plainly</title>
+<meta name="description" content="Which games got cracked, explained without the jargon.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <h1>Crack Watch, <span>plainly</span></h1>
+    <p class="lead">Which PC games got cracked recently, explained without the jargon. Based on posts in r/CrackWatch.</p>
+    <div class="controls">
+      <input id="q" type="search" placeholder="Search a game…" autocomplete="off" aria-label="Search a game">
+      <div class="chips" id="chips" role="tablist"></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <p class="meta-line" id="meta"></p>
+  <section class="grid" id="grid" aria-live="polite"></section>
+  <p class="empty" id="empty" hidden>No games match that.</p>
+
+  <section class="glossary" id="glossary">
+    <h2>What do these words mean?</h2>
+    <dl>
+      <dt>Cracked</dt><dd>The copy protection was removed, so the game runs without a bought copy.</dd>
+      <dt>Denuvo</dt><dd>The strongest and most common anti-piracy protection. Games with it often stay uncracked for months or never get cracked at all, so a Denuvo crack is big news.</dd>
+      <dt>Hypervisor workaround</dt><dd>A way to get around Denuvo without really removing it. You have to turn off Windows security features (such as virtualization-based security and driver signature checks) and run a low-level driver. Treat it as risky, not as a real crack.</dd>
+      <dt>Scene group</dt><dd>An organised release group (RUNE, TENOKE, Razor1911…). They are usually the first to put out a crack.</dd>
+      <dt>Repack</dt><dd>An existing crack recompressed by someone else (ElAmigos, FitGirl, DODI…) so it's smaller to download and easier to install. Repacks don't crack anything new.</dd>
+      <dt>DRM-free / GOG</dt><dd>GOG is a store that sells games without copy protection. Once a game is on GOG, a copy without protection exists by design.</dd>
+      <dt>Update</dt><dd>A newer game version, packaged to work with an existing crack.</dd>
+      <dt>Protection removed</dt><dd>The publisher took Denuvo out of the official game themselves, often a few years after launch.</dd>
+    </dl>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <p><b>News only.</b> This site reports which games were cracked. It never hosts or links to downloads.</p>
+    <p>Based on public posts in r/CrackWatch, rewritten in plain English. Not affiliated with Reddit, r/CrackWatch or Valve. Game info and images from Steam.</p>
+    <p id="contact" hidden>Questions or removal requests: <a id="issues" href="#">open an issue on GitHub</a>.</p>
+  </div>
+</footer>
+
+<div class="tip" id="tip" role="tooltip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+# Stays on this PC: raw Reddit posts, Steam cache, logs.
+/data/
+__pycache__/
+*.tmp
