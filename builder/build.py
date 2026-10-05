@@ -418,13 +418,47 @@ def sentence(ev, launched):
 GOG_TEXT = "<b>GOG</b>, a store that sells games with no copy protection"
 
 
-def days_to_crack(events, launched):
-    """Days from launch to the first real crack, for the table's "Days to crack" column."""
-    cracks = [e["date"] for e in events if e["kind"] in ("crack", "denuvo")]
+def days_to_crack(events, launched, status):
+    """Days from launch to the first real crack, for the table's "Days to crack" column.
+
+    For a Denuvo game that is the first Denuvo crack by a named group: an unsigned
+    post on launch day is news that it *has* Denuvo, or a fake. A Denuvo "crack"
+    within two days of launch can't be told apart from those from the posts alone.
+    """
+    if status == "denuvo":
+        cracks = [e["date"] for e in events if e["kind"] == "denuvo" and e.get("group")]
+    else:
+        cracks = [e["date"] for e in events if e["kind"] in ("crack", "denuvo")]
     if not cracks or not launched:
         return None
     days = (datetime.fromtimestamp(min(cracks), timezone.utc) - launched).days
+    if status == "denuvo" and days < 2:
+        return None
     return days if 0 <= days <= 3650 else None
+
+
+# A re-release of a game cracked before: "Reloaded Edition", "Enhanced", "Remastered".
+REISSUE_WORDS = re.compile(r"\b(reloaded|remaster(ed)?|redux|anniversary|hd|rerelease|re release|enhanced)\b")
+
+
+def base_name(name):
+    return re.sub(r"\s+", " ", REISSUE_WORDS.sub(" ", norm(name))).strip()
+
+
+def drop_reissue_days(games):
+    """No "days to crack" for a re-release whose original was already cracked before it came out."""
+    first_crack = {}
+    for g in games:
+        cracks = [t["date"] for t in g["timeline"] if t["kind"] in ("crack", "denuvo")]
+        if cracks:
+            b = base_name(g["name"])
+            first_crack.setdefault(b, []).append((min(cracks), g["id"]))
+    for g in games:
+        if g["days"] is None or not g["launched"]:
+            continue
+        earlier = [d for d, gid in first_crack.get(base_name(g["name"]), []) if gid != g["id"] and d < g["launched"]]
+        if earlier:
+            g["days"] = None
 
 
 FORBIDDEN = re.compile(r"predb\.|xrel\.to|pastebin|magnet:|torrent|nfo\.html|ibb\.co|imgur|mega\.nz|1fichier|"
@@ -488,7 +522,7 @@ def build(steam_minutes=5):
             "label": STATUS_LABEL[best["kind"]],
             "group": best.get("group"),
             "group_kind": group_kind(best.get("group")),
-            "days": days_to_crack(uniq, launched),
+            "days": days_to_crack(uniq, launched, best["kind"]),
             "launched": int(launched.timestamp()) if launched else None,
             "updated": max(e["date"] for e in uniq),
             "summary": sentence(best, launched),
@@ -506,6 +540,7 @@ def build(steam_minutes=5):
             } for e in uniq],
         })
     steam.save()
+    drop_reissue_days(out)
     # Safety net: nothing that points at files or NFO pages is ever published.
     clean = [g for g in out if not FORBIDDEN.search(json.dumps(g, ensure_ascii=False))]
     if len(clean) < len(out):

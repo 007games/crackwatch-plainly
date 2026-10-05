@@ -62,13 +62,17 @@ function stats() {
   const crackedWeek = games.filter(g => g.timeline.some(t => isCrack(t.kind) && t.date >= week)).length;
   const denuvo = games.filter(g => g.status === "denuvo").sort((a, b) => b.updated - a.updated);
   const timed = games.filter(g => g.days != null && isCrack(g.status)).map(g => g.days).sort((a, b) => a - b);
-  const fastest = games.filter(g => g.status === "denuvo" && g.days != null).sort((a, b) => a.days - b.days)[0];
+  // Only Denuvo cracks that happened in this window, not old ones of games with recent news.
+  const window = Date.now() / 1000 - 120 * 86400;
+  const firstDenuvo = g => Math.min(...g.timeline.filter(t => t.kind === "denuvo" && t.group).map(t => t.date));
+  const fastest = games.filter(g => g.status === "denuvo" && g.days != null && firstDenuvo(g) >= window)
+    .sort((a, b) => a.days - b.days)[0];
   const tile = (v, k, s) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div><div class="s">${s || "&nbsp;"}</div></div>`;
   $("stats").innerHTML =
     tile(crackedWeek, "games cracked in the last 7 days") +
     tile(denuvo.length, "Denuvo cracks in the last 120 days", denuvo[0] ? "Latest: " + esc(denuvo[0].name) : "") +
     (fastest
-      ? tile(fastest.days + (fastest.days === 1 ? " day" : " days"), "fastest Denuvo crack", esc(fastest.name))
+      ? tile(fastest.days + (fastest.days === 1 ? " day" : " days"), "fastest Denuvo crack in the last 120 days", esc(fastest.name))
       : tile(timed.length ? timed[timed.length >> 1] + " days" : "–", "typical time to crack", "median of recent cracks")) +
     tile((games.length + archiveCount).toLocaleString("en"), "games tracked", "since October 2016");
 }
