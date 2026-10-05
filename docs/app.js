@@ -247,6 +247,17 @@ if (gh) {
   $("contact").hidden = false;
 }
 
+// Visit counter, on the public site only (never the local preview): hits.sh, free and without an
+// account. Loading the badge counts one page view; it sets no cookies.
+if (gh) {
+  const img = new Image();
+  img.alt = "Page views";
+  img.src = `https://hits.sh/${location.hostname}${location.pathname.replace(/\/$/, "")}.svg` +
+    "?label=page%20views&color=2b3a52&labelColor=151d29";
+  $("counter").appendChild(img);
+  $("counter").hidden = false;
+}
+
 fetch("data/games.json", { cache: "no-store" })
   .then(r => r.json())
   .then(d => {

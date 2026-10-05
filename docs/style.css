@@ -160,3 +160,4 @@ tr.detail td { background: var(--surface); padding: 14px 16px 16px 144px; }
   .glossary dl { grid-template-columns: 1fr; }
   .glossary dd { margin-bottom: 6px; }
 }
+.counter img { vertical-align: middle; height: 20px; margin-left: 4px; }
