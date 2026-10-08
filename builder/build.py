@@ -126,7 +126,7 @@ MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 # Words around a name that say how it was released, not what the game is called.
 NAME_JUNK = re.compile(
     r"(?:\s+|[._-])(?:crack\s?fix|hot\s?fix|crack\s+only|online\s+fix|steamworks\s+fix|cracked|crack|fix|x86|x64|rip|"
-    r"to\s+cracked|bypass(?:ed)?|prepack|inc(?:l|luding)?\.?(?:\s+[\w']+)*|all\s+dlc'?s?|dlcs?|v\.?\s?\d+(?:[.\s]\d+)*|b\d{5,}|"
+    r"to\s+cracked|bypass(?:ed)?|prepack|inc(?:l|luding)?\.?(?:\s+[\w']+)*|all\s+dlc'?s?|dlcs?|(?-i:v)\.?\s?\d+(?:[.\s]\d+)*|b\d{5,}|"
     r"public\s+beta\s*\d*|working|dirfix|and)$", re.I)
 # A question or a sentence, not a release: early posts often carried a "Release" label anyway.
 SENTENCE = re.compile(
