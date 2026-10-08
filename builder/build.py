@@ -84,6 +84,8 @@ def split_release(title, group=None):
     says who it is (groups like 'x.X.RIDDICK.X.x' contain dots and dashes).
     """
     t = re.sub(r"[\s._]+(torrent|cracked)$", "", title.strip(), flags=re.I)
+    t = re.sub(r"[._]REAL(?=[._-]|$)", "", t)  # scene tag for "the genuine one", always in capitals
+    t = re.sub(r"(?<=[a-z])[._]s(?=[._])", "'s", t, flags=re.I)  # "Director.s.Cut": the apostrophe as a dot
     if group and t.lower().endswith("-" + group.lower()):
         t = t[:-len(group) - 1]
     elif not group:
@@ -124,7 +126,7 @@ MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 # Words around a name that say how it was released, not what the game is called.
 NAME_JUNK = re.compile(
     r"(?:\s+|[._-])(?:crack\s?fix|hot\s?fix|crack\s+only|online\s+fix|steamworks\s+fix|cracked|crack|fix|x86|x64|rip|"
-    r"to\s+cracked|bypass(?:ed)?|prepack|inc(?:l|luding)?\.?(?:\s+[\w']+)*|all\s+dlc'?s?|dlcs?|v\d+(?:\.\d+)*|"
+    r"to\s+cracked|bypass(?:ed)?|prepack|inc(?:l|luding)?\.?(?:\s+[\w']+)*|all\s+dlc'?s?|dlcs?|v\.?\s?\d+(?:[.\s]\d+)*|"
     r"public\s+beta\s*\d*|working|dirfix|and)$", re.I)
 # A question or a sentence, not a release: early posts often carried a "Release" label anyway.
 SENTENCE = re.compile(
