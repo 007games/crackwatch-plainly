@@ -99,7 +99,8 @@ def split_release(title, group=None):
     is_update = bool(re.search(r"(^|[._ ])update([._ ]|$)", t, re.I))
     version = None
     # The name ends where the version, build or update marker starts.
-    v = re.search(r"[._ ](?:update|build|patch|v(?=\d)|(?=\d+(?:\.\d+)+))[._ ]?v?([\w.]+?)?(?:-([\w.]+))?$", t, re.I)
+    # A lowercase v starts a version ("Grim.Dawn.v1.3"); a capital V is part of a title ("Sniper.Elite.V2").
+    v = re.search(r"[._ ](?:update|build|patch|(?-i:v)(?=\d)|(?=\d+(?:\.\d+)+))[._ ]?v?([\w.]+?)?(?:-([\w.]+))?$", t, re.I)
     if v:
         version = v.group(2) or v.group(1)
         t = t[:v.start()]
