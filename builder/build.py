@@ -158,6 +158,9 @@ def clean_name(name):
     n = re.split(r"\s+[-–|]\s+(?:darck|kaos|fitgirl|dodi|corepack|elamigos|multi\d*|lossless)\b|\s+\|\s+|\s+\+\s+|\s+—\s+",
                  n, maxsplit=1, flags=re.I)[0]
     n = re.sub(r"\s*[(\[{][^)\]}]*[)\]}]?", " ", n)  # (Hypervisor), [FitGirl Repack], {MULTI15}
+    # A version mid-name ends it: "Dishonored 2 v1 77 9 ^", "rFactor2 v1115 Build 4203454".
+    # Lowercase v and a multi-part or long number only, so "Sniper Elite V2" stays.
+    n = re.sub(r"\s+v(?:\d+(?:[\s.]\d+)+|\d{3,})\b.*$", "", n)
     n = re.sub(r"\s+", " ", n).strip(" -–:,.|")
     for _ in range(4):  # "Name Online Fix x86", "Name Crack Only V2"
         before = n
