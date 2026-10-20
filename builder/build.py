@@ -480,10 +480,19 @@ def load_posts():
 
 
 def write_json(path, obj):
+    """Write only real changes: a file that differs just in its "built" time is left alone,
+    so a run without news gives no commit, no GitHub build and no deploy."""
+    try:
+        old = json.loads(path.read_text(encoding="utf-8"))
+        if {**old, "built": None} == {**obj, "built": None}:
+            return False
+    except (OSError, ValueError):
+        pass
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     tmp.replace(path)
+    return True
 
 
 def build(steam_minutes=5):
@@ -561,10 +570,11 @@ def build(steam_minutes=5):
         for t in g["timeline"]:
             t.pop("text", None)
     built = int(time.time())
-    write_json(PUBLIC / "games.json", {"built": built, "games": recent, "archive": len(older)})
-    write_json(PUBLIC / "archive.json", {"built": built, "games": older})
+    changed = [p.name for p, obj in ((PUBLIC / "games.json", {"built": built, "games": recent, "archive": len(older)}),
+                                    (PUBLIC / "archive.json", {"built": built, "games": older})) if write_json(p, obj)]
     print(f"{datetime.now():%Y-%m-%d %H:%M} built {len(recent)} recent + {len(older)} archived games "
-          f"from {len(posts)} posts ({steam.calls} Steam calls, pending {steam.pending} )", flush=True)
+          f"from {len(posts)} posts ({steam.calls} Steam calls, pending {steam.pending} ), "
+          f"changed: {', '.join(changed) or 'nothing'}", flush=True)
 
 
 class Lock:
